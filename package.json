@@ -1,0 +1,16 @@
+{
+  "name": "intosudoku-social",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Posts the daily Sudoku to Instagram. Kept separate from the static site so the site itself stays dependency-free.",
+  "scripts": {
+    "dry-run": "node post-daily.js --dry-run",
+    "post": "node post-daily.js"
+  },
+  "dependencies": {
+    "sharp": "^0.33.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

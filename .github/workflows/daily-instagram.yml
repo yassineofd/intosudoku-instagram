@@ -1,0 +1,75 @@
+name: Daily Sudoku to Instagram
+
+on:
+  schedule:
+    # 07:00 UTC daily (GitHub may delay scheduled runs by several minutes).
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Puzzle date YYYY-MM-DD (default: today)'
+        required: false
+      dry_run:
+        description: 'Render only, do not publish or post'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # to publish the day's image on the daily-images branch
+
+concurrency:
+  group: daily-instagram
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      POST_TIMEZONE: UTC
+      SITE_URL: https://intosudoku.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies and fonts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
+          npm install --no-audit --no-fund
+
+      - name: Render image
+        env:
+          INPUT_DATE: ${{ inputs.date }}
+        run: |
+          DATE="${INPUT_DATE:-$(TZ=$POST_TIMEZONE date +%F)}"
+          echo "DATE=$DATE" >> "$GITHUB_ENV"
+          node post-daily.js --dry-run --date "$DATE" --out "$RUNNER_TEMP/$DATE.jpg"
+
+      # Instagram downloads the image from a public URL, so publish it on a
+      # branch of this (public) repo and use its raw.githubusercontent.com URL.
+      - name: Publish image to daily-images branch
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
+          git init -q -b daily-images
+          cp "$RUNNER_TEMP/$DATE.jpg" .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add . && git commit -q -m "Daily Sudoku image $DATE"
+          # Orphan branch, force-pushed each day, so history never grows.
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" daily-images
+
+      - name: Post to Instagram
+        if: ${{ !inputs.dry_run }}
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: |
+          node post-daily.js --date "$DATE" --out "$RUNNER_TEMP/$DATE.jpg" \
+            --image-url "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/daily-images/${DATE}.jpg"
